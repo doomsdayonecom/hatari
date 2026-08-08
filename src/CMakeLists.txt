@@ -66,7 +66,9 @@ set(SOURCES
 	video.c
 	wavFormat.c
 	xbios.c
-	ymFormat.c)
+	ymFormat.c
+	rrdc/retro_control.c
+	rrdc/st_control.c)
 
 # Some code is shared with the hmsa tool, so we list this separately:
 set(SOURCES_HMSA createBlankImage.c file.c file_archive.c floppies/dim.c floppies/msa.c floppies/st.c utils.c)
@@ -104,7 +106,7 @@ if(WIN32)
 	endif(CMAKE_COMPILER_IS_GNUCC)
 endif(WIN32)
 
-include_directories(includes debug falcon cpu ${CMAKE_BINARY_DIR})
+include_directories(includes debug falcon cpu rrdc ${CMAKE_BINARY_DIR})
 
 if(ZLIB_FOUND)
 	include_directories(${ZLIB_INCLUDE_DIR})

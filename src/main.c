@@ -15,6 +15,7 @@ const char Main_fileid[] = "Hatari main.c";
 #include "configuration.h"
 #include "control.h"
 #include "conv_st.h"
+#include "st_control.h"
 #include "options.h"
 #include "dialog.h"
 #include "event.h"
@@ -336,11 +337,15 @@ void Main_Init(int argc, char *argv[])
 	
 	/* Check if Timing_Delay is accurate */
 	Timing_CheckForAccurateDelays();
+
+	/* RRDC: bind the remote-control server if HATARI_CONTROLPORT is set */
+	st_control_init();
 }
 
 
 void Main_UnInit(void)
 {
+	st_control_uninit();
 	Control_RemoveFifo();
 
 	/* cleanly close the AVI file, if needed */

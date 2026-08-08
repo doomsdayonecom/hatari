@@ -44,3 +44,9 @@ Debug/*
 .cproject
 .project
 .settings/
+
+# RRDC out-of-tree build + copyrighted TOS images (never commit)
+/build-rrdc/
+/tos/
+*.rom
+*.ROM
