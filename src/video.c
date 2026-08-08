@@ -457,6 +457,7 @@ const char Video_fileid[] = "Hatari video.c";
 #include "vdi.h"
 #include "video.h"
 #include "ymFormat.h"
+#include "st_control.h"
 #include "falcon/videl.h"
 #include "blitter.h"
 #include "avi_record.h"
@@ -5017,6 +5018,10 @@ void Video_InterruptHandler_VBL ( void )
 	YMFormat_UpdateRecording();
 	/* Generate 1/50th second of sound sample data, to be played by sound thread */
 	Sound_Update_VBL();
+
+	/* RRDC: service one control request, capture this frame + its audio, tick the
+	 * /step budget, and block here while the machine is paused (VBL boundary). */
+	st_control_vbl();
 
 	/* Update the blitter's stats for the previous VBL */
 	Blitter_StatsUpdateRate ( (int)( VBL_ClockCounter - VBL_ClockCounter_prev ) );
