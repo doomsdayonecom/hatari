@@ -30,6 +30,8 @@ enum
 extern int JoystickSpaceBar;
 
 extern uint8_t Joy_GetStickData(int nStJoyId);
+extern bool Joy_SetRrdcPad(int nStJoyId, uint8_t nData, bool bConnected);
+extern bool Joy_GetRrdcPad(int nStJoyId, uint8_t *pnData);
 extern bool Joy_SetCursorEmulation(int port);
 extern void Joy_ToggleCursorEmulation(void);
 extern bool Joy_SwitchMode(int port);
