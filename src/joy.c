@@ -36,6 +36,56 @@ int JoystickSpaceBar = JOYSTICK_SPACE_NULL;   /* State of space-bar on joystick 
 static uint32_t nJoyKeyEmu[JOYSTICK_COUNT];
 static uint16_t nSteJoySelect;
 
+/* ---- RRDC virtual pad -----------------------------------------------------
+ * The Retro Remote Debug Controller injects held joystick state from outside
+ * the emulator, so a test can drive a program with no host joystick attached
+ * and no SDL event loop -- neither of which a headless run has.
+ *
+ * IT OVERRIDES nJoystickMode DELIBERATELY. A headless Hatari is configured
+ * JOYSTICK_DISABLED, and the whole point of injection is to supply state the
+ * configured source cannot. Honouring the mode here would let /pad answer
+ * "injected" and then report nothing -- the precise failure the contract's 400
+ * exists to prevent, arriving silently instead.
+ *
+ * INJECTING HERE REACHES EVERY CONSUMER of joystick state, because they all
+ * read through this one function: the IKBD's report packets (ikbd.c, the path
+ * a program sitting on `joyvec` sees), the direct $FFFC02 read, the STE pad
+ * and the parallel-port sticks. One override, no path left behind.
+ */
+static uint8_t nRrdcPadData[JOYSTICK_COUNT];
+static bool bRrdcPadConnected[JOYSTICK_COUNT];
+
+/**
+ * Present (or unplug) a virtual joystick and set its held state.
+ * nData is in ST format -- ATARIJOY_BITMASK_*, direction in bits 0-3 and fire
+ * in bit 7. Returns false for an out-of-range ID.
+ */
+bool Joy_SetRrdcPad(int nStJoyId, uint8_t nData, bool bConnected)
+{
+	if (nStJoyId < 0 || nStJoyId >= JOYSTICK_COUNT)
+		return false;
+
+	nRrdcPadData[nStJoyId] = nData;
+	bRrdcPadConnected[nStJoyId] = bConnected;
+	return true;
+}
+
+/**
+ * Read back an injected pad. Returns false when nothing is plugged in at that
+ * ID, which is how a caller tells "unplugged" from "plugged in, nothing held".
+ */
+bool Joy_GetRrdcPad(int nStJoyId, uint8_t *pnData)
+{
+	if (nStJoyId < 0 || nStJoyId >= JOYSTICK_COUNT)
+		return false;
+	if (!bRrdcPadConnected[nStJoyId])
+		return false;
+
+	if (pnData)
+		*pnData = nRrdcPadData[nStJoyId];
+	return true;
+}
+
 
 /**
  * Enable PC Joystick button press to mimic space bar
@@ -85,6 +135,12 @@ uint8_t Joy_GetStickData(int nStJoyId)
 {
 	uint8_t nData = 0;
 	JOYREADING JoyReading;
+
+	/* An injected pad wins over the configured source, and returns straight
+	 * out: the caller asked for an exact held mask, so autofire and the
+	 * space-bar/jump translation below must not rewrite it. */
+	if (nStJoyId >= 0 && nStJoyId < JOYSTICK_COUNT && bRrdcPadConnected[nStJoyId])
+		return nRrdcPadData[nStJoyId];
 
 	/* Are we emulating the joystick via the keyboard? */
 	if (ConfigureParams.Joysticks.Joy[nStJoyId].nJoystickMode == JOYSTICK_KEYBOARD)

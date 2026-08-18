@@ -50,6 +50,8 @@ static void st_sleep1ms(void) { usleep(1000); }
 #include "ikbd.h"
 #include "keymap.h"
 #include "sound.h"
+#include "configuration.h"  /* JOYID_* */
+#include "joy.h"
 
 #include "st_control.h"
 
@@ -173,18 +175,91 @@ static uint32_t st_capture_audio(int16_t *out, uint32_t cap,
 	return n;
 }
 
-/* ---- pointer / pad --------------------------------------------------------
- * Honest stubs for now so 0.5.0 still advertises cumulatively (a 0 return makes
- * the endpoint answer 400, not a link error). The ST has a mouse + joystick, so
- * these become real in a follow-up (mouse via Keyboard.*, joystick via Joy_*). */
+/* ---- pointer --------------------------------------------------------------
+ * Still an honest stub (a 0 return makes the endpoint answer 400, not a link
+ * error). The ST's mouse is on the same IKBD as the joystick and becomes real
+ * the same way, via Keyboard.* / IKBD_*. */
 static int st_set_pointer(int absolute, int32_t x, int32_t y, int buttons)
 { (void)absolute; (void)x; (void)y; (void)buttons; return 0; }
 static int st_get_pointer(int32_t *x, int32_t *y, int *buttons)
 { (void)x; (void)y; (void)buttons; return 0; }
+
+/* ---- pad ------------------------------------------------------------------
+ *
+ * INDEX 0 IS THE ST'S PORT 1, not port 0. Port 0 shares its connector with the
+ * mouse, so every ST game reads port 1 and joy.c says so at the top of the
+ * file. Mapping RRDC index 0 anywhere else would make the obvious call --
+ * `emu.pad(buttons=RIM_RIGHT)` -- drive the port nothing reads.
+ *
+ * ONE BUTTON, AND THAT IS REPORTED RATHER THAN PAPERED OVER. An Atari stick has
+ * a single fire button, so only canonical A maps to it. B/X/Y/START/SELECT/L/R
+ * have nowhere to go and are DROPPED, which is why GET /pad reports back what
+ * the machine actually holds and not what was posted: inject A|B and read A.
+ * Folding B into fire would make the read-back claim a button the ST cannot
+ * have, and a plausible-but-wrong mask is the failure this contract's 400 and
+ * R*'s RIM seam both exist to avoid.
+ *
+ * The state is a LEVEL held in joy.c until changed, per the contract. */
+
+#define ST_PAD_COUNT 2
+
+static const int st_pad_joyid[ST_PAD_COUNT] = {
+	JOYID_JOYSTICK1,   /* index 0 -> the port games read */
+	JOYID_JOYSTICK0,   /* index 1 -> the mouse-sharing port */
+};
+
+/* Shadowed so a -1 ("leave unchanged") request can be answered while the pad is
+ * unplugged -- joy.c reports no mask at all for an absent stick. */
+static int g_pad_mask[ST_PAD_COUNT];
+static int g_pad_present[ST_PAD_COUNT];
+
+static uint8_t st_pad_to_st(int canonical)
+{
+	uint8_t n = 0;
+	if (canonical & 0x001) n |= ATARIJOY_BITMASK_LEFT;
+	if (canonical & 0x002) n |= ATARIJOY_BITMASK_RIGHT;
+	if (canonical & 0x004) n |= ATARIJOY_BITMASK_UP;
+	if (canonical & 0x008) n |= ATARIJOY_BITMASK_DOWN;
+	if (canonical & 0x010) n |= ATARIJOY_BITMASK_FIRE;   /* A */
+	return n;
+}
+
+static int st_pad_from_st(uint8_t n)
+{
+	int c = 0;
+	if (n & ATARIJOY_BITMASK_LEFT)  c |= 0x001;
+	if (n & ATARIJOY_BITMASK_RIGHT) c |= 0x002;
+	if (n & ATARIJOY_BITMASK_UP)    c |= 0x004;
+	if (n & ATARIJOY_BITMASK_DOWN)  c |= 0x008;
+	if (n & ATARIJOY_BITMASK_FIRE)  c |= 0x010;
+	return c;
+}
+
 static int st_set_pad(int index, int buttons, int connected)
-{ (void)index; (void)buttons; (void)connected; return 0; }
+{
+	if (index < 0 || index >= ST_PAD_COUNT)
+		return 0;
+
+	if (buttons >= 0)   g_pad_mask[index]    = buttons;
+	if (connected >= 0) g_pad_present[index] = connected ? 1 : 0;
+
+	return Joy_SetRrdcPad(st_pad_joyid[index], st_pad_to_st(g_pad_mask[index]),
+	                      g_pad_present[index] ? true : false) ? 1 : 0;
+}
+
 static int st_get_pad(int index, int *buttons, int *connected)
-{ (void)index; (void)buttons; (void)connected; return 0; }
+{
+	uint8_t n = 0;
+	bool present;
+
+	if (index < 0 || index >= ST_PAD_COUNT)
+		return 0;
+
+	present = Joy_GetRrdcPad(st_pad_joyid[index], &n);
+	if (buttons)   *buttons   = present ? st_pad_from_st(n) : 0;
+	if (connected) *connected = present ? 1 : 0;
+	return 1;
+}
 
 /* Field order MUST match retro_control_backend_t exactly. */
 static const retro_control_backend_t st_backend = {
